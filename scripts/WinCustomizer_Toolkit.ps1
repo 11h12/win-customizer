@@ -245,12 +245,12 @@ function Read-LocalAdminName {
 
 function Read-LocalAdminPassword {
     while ($true) {
-        $first = Read-Host 'Mat khau local admin (toi thieu 12 ky tu)' -AsSecureString
+        $first = Read-Host 'Mat khau local admin' -AsSecureString
         $second = Read-Host 'Nhap lai mat khau' -AsSecureString
         $firstPlain = Convert-SecureStringToPlainText -SecureString $first
         $secondPlain = Convert-SecureStringToPlainText -SecureString $second
 
-        if ($firstPlain.Length -ge 12 -and $firstPlain -ceq $secondPlain) {
+        if ($firstPlain.Length -gt 0 -and $firstPlain -ceq $secondPlain) {
             $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($firstPlain))
             $first.Dispose()
             $second.Dispose()
@@ -263,7 +263,7 @@ function Read-LocalAdminPassword {
         $second.Dispose()
         $firstPlain = $null
         $secondPlain = $null
-        Write-Warning 'Mat khau khong khop hoac it hon 12 ky tu. Hay thu lai.'
+        Write-Warning 'Mat khau khong khop hoac dang de trong. Hay thu lai.'
     }
 }
 
@@ -283,7 +283,14 @@ function Invoke-Step2_GenerateUnattendXml {
     }
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
     $backupPath = Read-Host 'Thu muc backup tuy chon (Enter de bo qua)'
-    if (-not [string]::IsNullOrWhiteSpace($backupPath)) { $backupPath = [System.IO.Path]::GetFullPath($backupPath) }
+    if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
+        $backupPath = $backupPath.Trim()
+        if ($backupPath -match '^[A-Za-z]:\\?$') {
+            $backupPath = $backupPath.Substring(0, 2) + '\'
+        } else {
+            $backupPath = [System.IO.Path]::GetFullPath($backupPath)
+        }
+    }
     $copyProfileXml = ''
     if ($copyProfile) {
         $copyProfileXml = @'
@@ -368,8 +375,9 @@ $localAccountXml
     $passwordEncoded = $null; $unattendXml = $null
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
         New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
-        Copy-Item -LiteralPath $targetPath -Destination (Join-Path $backupPath 'unattend.xml') -Force
-        Write-Host "Da backup answer file: $(Join-Path $backupPath 'unattend.xml')" -ForegroundColor Yellow
+        $backupFile = Join-Path -Path $backupPath -ChildPath 'unattend.xml'
+        Copy-Item -LiteralPath $targetPath -Destination $backupFile -Force -ErrorAction Stop
+        Write-Host "Da backup answer file: $backupFile" -ForegroundColor Yellow
     }
     Write-Host "Da tao answer file: $targetPath" -ForegroundColor Green
     Write-Host 'Windows SIM voi catalog dung version van la buoc xac minh bat buoc truoc Sysprep.' -ForegroundColor Yellow
