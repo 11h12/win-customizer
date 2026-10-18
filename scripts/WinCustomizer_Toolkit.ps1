@@ -239,9 +239,30 @@ function Invoke-Step2_GenerateUnattendXml {
     Write-Warning 'Answer file chua thong tin tai khoan. Base64 khong phai ma hoa; khong commit hoac chia se file.'
 
     $script:ToolkitTaskResults = @()
-    $adminUser = Read-LocalAdminName
-    $passwordEncoded = Read-LocalAdminPassword
+    $copyProfile = Read-YesNo 'Dua giao dien/profile hien tai lam profile mac dinh (CopyProfile)?'
+    $createLocalAccount = Read-YesNo 'Tao local admin moi trong OOBE? Neu No, OOBE se hoi nguoi dung tao tai khoan'
+    $adminUser = $null
+    $passwordEncoded = $null
+    if ($createLocalAccount) {
+        $adminUser = Read-LocalAdminName
+        $passwordEncoded = Read-LocalAdminPassword
+    }
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
+    $exportWifi = Read-YesNo 'Xuat profile Wi-Fi hien tai de backup rieng? File co the chua key mang; mac dinh la No'
+    $backupPath = Read-Host 'Thu muc backup tuy chon (Enter de bo qua)'
+    if (-not [string]::IsNullOrWhiteSpace($backupPath)) { $backupPath = [System.IO.Path]::GetFullPath($backupPath) }
+    if ($exportWifi -and [string]::IsNullOrWhiteSpace($backupPath)) { Write-Warning 'Da chon Wi-Fi nhung khong co thu muc backup; se bo qua xuat Wi-Fi.'; $exportWifi = $false }
+    $copyProfileXml = ''
+    if ($copyProfile) {
+        $copyProfileXml = @'
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <CopyProfile>true</CopyProfile>
+      <TimeZone>SE Asia Standard Time</TimeZone>
+    </component>
+  </settings>
+'@
+    }
     $driverSettings = ''
     if ($preserveDrivers) {
         $driverSettings = @'
@@ -252,28 +273,10 @@ function Invoke-Step2_GenerateUnattendXml {
   </settings>
 '@
     }
-    $escapedAdminUser = [System.Security.SecurityElement]::Escape($adminUser)
-    $targetPath = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
-
-    if (Test-Path -LiteralPath $targetPath) {
-        if (-not (Read-YesNo "File da ton tai ($targetPath). Ghi de file cu?")) {
-            Write-Host 'Da huy, file cu duoc giu nguyen.' -ForegroundColor Yellow
-            return
-        }
-    }
-
-    $unattendXml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-$driverSettings
-  <settings pass="specialize">
-    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <CopyProfile>true</CopyProfile>
-      <TimeZone>SE Asia Standard Time</TimeZone>
-    </component>
-  </settings>
-  <settings pass="oobeSystem">
-    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+    $escapedAdminUser = if ($createLocalAccount) { [System.Security.SecurityElement]::Escape($adminUser) } else { '' }
+    $localAccountXml = ''
+    if ($createLocalAccount) {
+        $localAccountXml = @"
       <UserAccounts>
         <LocalAccounts>
           <LocalAccount wcm:action="add">
@@ -287,6 +290,25 @@ $driverSettings
           </LocalAccount>
         </LocalAccounts>
       </UserAccounts>
+"@
+    }
+    $targetPath = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
+
+    if (Test-Path -LiteralPath $targetPath) {
+        if (-not (Read-YesNo "File da ton tai ($targetPath). Ghi de file cu?")) {
+            Write-Host 'Da huy, file cu duoc giu nguyen.' -ForegroundColor Yellow
+            return
+        }
+    }
+
+    $unattendXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+$driverSettings
+$copyProfileXml
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+$localAccountXml
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideLocalAccountScreen>true</HideLocalAccountScreen>
@@ -302,8 +324,8 @@ $driverSettings
     $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Parse va kiem tra XML' {
         $xmlDocument = [xml]$unattendXml
         if ($xmlDocument.DocumentElement.LocalName -ne 'unattend') { throw 'Root XML khong phai unattend.' }
-        $copy = $xmlDocument.SelectSingleNode("//*[local-name()='CopyProfile']")
-        if ($null -eq $copy -or $copy.InnerText -ine 'true') { throw 'Thieu CopyProfile=true trong pass specialize.' }
+        $copy = $xmlDocument.SelectNodes("//*[local-name()='CopyProfile']")
+        if ($copy.Count -gt 1 -or ($copy.Count -eq 1 -and $copy[0].InnerText -ine 'true')) { throw 'CopyProfile neu co phai co mot gia tri true.' }
     })){ $passwordEncoded = $null; return }
     $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Ghi answer file va gioi han quyen doc' {
         [System.IO.File]::WriteAllText($targetPath, $unattendXml, [System.Text.UTF8Encoding]::new($false))
@@ -311,6 +333,16 @@ $driverSettings
         if ($LASTEXITCODE -ne 0) { throw 'icacls khong gioi han duoc quyen doc answer file.' }
     })){ $passwordEncoded = $null; return }
     $passwordEncoded = $null; $unattendXml = $null
+    if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
+        New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+        Copy-Item -LiteralPath $targetPath -Destination (Join-Path $backupPath 'unattend.xml') -Force
+        Write-Host "Da backup answer file: $(Join-Path $backupPath 'unattend.xml')" -ForegroundColor Yellow
+        if ($exportWifi) {
+            & netsh.exe wlan export profile folder="$backupPath\WiFi" key=clear | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Warning 'Khong xuat duoc Wi-Fi profile.' }
+            else { Write-Warning "Wi-Fi profile da xuat vao $backupPath\WiFi; file co the chua key mang." }
+        }
+    }
     Write-Host "Da tao answer file: $targetPath" -ForegroundColor Green
     Write-Host 'Windows SIM voi catalog dung version van la buoc xac minh bat buoc truoc Sysprep.' -ForegroundColor Yellow
     $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
@@ -324,7 +356,7 @@ function Test-UnattendForSysprep {
     $ns = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
     $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
     $copy = $doc.SelectNodes('/u:unattend/u:settings[@pass="specialize"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:CopyProfile', $ns)
-    if ($copy.Count -ne 1 -or $copy[0].InnerText -ine 'true') { throw 'Answer file phai co dung mot CopyProfile=true trong pass specialize.' }
+    if ($copy.Count -gt 1 -or ($copy.Count -eq 1 -and $copy[0].InnerText -ine 'true')) { throw 'CopyProfile neu co phai co dung mot gia tri true.' }
     $account = $doc.SelectSingleNode('/u:unattend/u:settings[@pass="oobeSystem"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:UserAccounts/u:LocalAccounts/u:LocalAccount', $ns)
     $accountName = $account.SelectSingleNode('./u:Name', $ns)
     if ($null -eq $account -or $null -eq $accountName -or [string]::IsNullOrWhiteSpace($accountName.InnerText)) { throw 'Khong co LocalAccount hop le trong oobeSystem.' }
