@@ -78,6 +78,30 @@ function Invoke-ToolkitTask {
     }
 }
 
+function Invoke-DismWithProgress {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Activity
+    )
+
+    $lastPercent = -1
+    & "$env:WINDIR\System32\dism.exe" @Arguments 2>&1 | ForEach-Object {
+        $line = $_.ToString()
+        if ($line -match '(\d{1,3}(?:[\.,]\d+)?)%') {
+            $percentText = $Matches[1].Replace(',', '.')
+            $percent = [int][math]::Min(100, [math]::Max(0, [math]::Round([double]$percentText)))
+            if ($percent -ne $lastPercent) {
+                Write-Progress -Activity $Activity -Status "$percent%" -PercentComplete $percent
+                $lastPercent = $percent
+            }
+        }
+        Write-Host "      $line"
+    }
+    $exitCode = $LASTEXITCODE
+    Write-Progress -Activity $Activity -Completed
+    return $exitCode
+}
+
 function Invoke-Step1_CleanAndExport {
     Clear-Host
     Write-Host '=== BUOC 1: DON DEP VA XUAT CAU HINH ===' -ForegroundColor Cyan
@@ -119,8 +143,8 @@ function Invoke-Step1_CleanAndExport {
         $taskNumber++
         if ($runResetBase) {
             Invoke-ToolkitTask $taskNumber 'Chay DISM StartComponentCleanup /ResetBase' {
-                & "$env:WINDIR\System32\dism.exe" /Online /Cleanup-Image /StartComponentCleanup /ResetBase
-                if ($LASTEXITCODE -ne 0) { throw "DISM ket thuc voi ma loi $LASTEXITCODE. Kiem tra DISM.log." }
+                $dismCode = Invoke-DismWithProgress -Activity 'DISM Component Cleanup /ResetBase' -Arguments @('/Online', '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase')
+                if ($dismCode -ne 0) { throw "DISM ket thuc voi ma loi $dismCode. Kiem tra DISM.log." }
             } | Out-Null
         }
         else {
@@ -456,8 +480,8 @@ function Invoke-Step5_CaptureWim {
 
     $taskNumber++
     Invoke-ToolkitTask $taskNumber 'DISM Capture-Image' {
-        & "$env:WINDIR\System32\dism.exe" /Capture-Image "/ImageFile:$imagePath" "/CaptureDir:$sourceRoot" /Name:'Windows_Custom' /Description:'Custom Windows image' /Compress:max /CheckIntegrity /Verify
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "DISM capture that bai (ma loi $LASTEXITCODE)." }
+        $dismCode = Invoke-DismWithProgress -Activity 'DISM Capture-Image' -Arguments @('/Capture-Image', "/ImageFile:$imagePath", "/CaptureDir:$sourceRoot", '/Name:Windows_Custom', '/Description:Custom Windows image', '/Compress:max', '/CheckIntegrity', '/Verify')
+        if ($dismCode -ne 0 -or -not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "DISM capture that bai (ma loi $dismCode)." }
     } | Out-Null
 
     $taskNumber++
