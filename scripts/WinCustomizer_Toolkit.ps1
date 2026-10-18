@@ -37,85 +37,143 @@ function Remove-FolderContents {
     }
 }
 
+function Invoke-ToolkitTask {
+    param(
+        [Parameter(Mandatory = $true)][int]$Number,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    $started = Get-Date
+    Write-Host "`n[$Number] [RUNNING] $Name" -ForegroundColor Yellow
+    try {
+        & $Action
+        $elapsed = ((Get-Date) - $started).ToString('hh\:mm\:ss')
+        Write-Host "[$Number] [SUCCESS] $Name (thoi gian: $elapsed)" -ForegroundColor Green
+        $script:ToolkitTaskResults += [pscustomobject]@{
+            Number = $Number
+            Name = $Name
+            Status = 'SUCCESS'
+            Duration = $elapsed
+            Error = ''
+        }
+        return $true
+    }
+    catch {
+        $elapsed = ((Get-Date) - $started).ToString('hh\:mm\:ss')
+        $message = $_.Exception.Message
+        Write-Host "[$Number] [FAILED] $Name (thoi gian: $elapsed)" -ForegroundColor Red
+        Write-Host "      Loi: $message" -ForegroundColor Red
+        $script:ToolkitTaskResults += [pscustomobject]@{
+            Number = $Number
+            Name = $Name
+            Status = 'FAILED'
+            Duration = $elapsed
+            Error = $message
+        }
+        return $false
+    }
+}
+
 function Invoke-Step1_CleanAndExport {
     Clear-Host
     Write-Host '=== BUOC 1: DON DEP VA XUAT CAU HINH ===' -ForegroundColor Cyan
+    Write-Host 'Moi task chay tuan tu. Trang thai SUCCESS/FAILED va loi se hien ngay sau task.' -ForegroundColor DarkGray
     Write-Host 'Khong xoa Prefetch. Cac tep dang duoc Windows su dung co the khong xoa duoc.' -ForegroundColor DarkGray
 
+    $script:ToolkitTaskResults = @()
     $updateService = Get-Service -Name wuauserv -ErrorAction SilentlyContinue
     $wasRunning = $null -ne $updateService -and $updateService.Status -eq 'Running'
-    if ($wasRunning) {
-        try {
-            Stop-Service -Name wuauserv -Force -ErrorAction Stop
-        }
-        catch {
-            Write-Warning "Khong dung duoc Windows Update: $($_.Exception.Message)"
-        }
-    }
+    $taskNumber = 0
 
     try {
-        $cleanupPaths = @(
-            $env:TEMP,
-            (Join-Path $env:WINDIR 'Temp'),
-            (Join-Path $env:WINDIR 'SoftwareDistribution\Download')
-        ) | Select-Object -Unique
+        $taskNumber++
+        Invoke-ToolkitTask $taskNumber 'Dung Windows Update' {
+            if ($null -eq $updateService) { throw 'Khong tim thay dich vu wuauserv.' }
+            if ($wasRunning) { Stop-Service -Name wuauserv -Force -ErrorAction Stop }
+            else { Write-Host '      Windows Update dang dung san.' -ForegroundColor DarkGray }
+        } | Out-Null
 
-        foreach ($path in $cleanupPaths) {
-            Write-Host "Don dep: $path" -ForegroundColor Yellow
-            Remove-FolderContents -Path $path
+        $cleanupTasks = @(
+            @{ Name = 'Don temp cua user hien tai'; Path = $env:TEMP },
+            @{ Name = 'Don Windows Temp'; Path = (Join-Path $env:WINDIR 'Temp') },
+            @{ Name = 'Don cache Windows Update'; Path = (Join-Path $env:WINDIR 'SoftwareDistribution\Download') }
+        )
+        foreach ($cleanupTask in $cleanupTasks) {
+            $taskNumber++
+            $path = $cleanupTask.Path
+            $name = $cleanupTask.Name
+            Invoke-ToolkitTask $taskNumber $name {
+                if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+                    throw "Khong tim thay thu muc: $path"
+                }
+                Remove-FolderContents -Path $path
+                Write-Host "      Path: $path" -ForegroundColor DarkGray
+            } | Out-Null
+        }
+
+        $runResetBase = Read-YesNo 'Chay DISM StartComponentCleanup /ResetBase? Update hien co se khong go cai dat duoc'
+        $taskNumber++
+        if ($runResetBase) {
+            Invoke-ToolkitTask $taskNumber 'Chay DISM StartComponentCleanup /ResetBase' {
+                & "$env:WINDIR\System32\dism.exe" /Online /Cleanup-Image /StartComponentCleanup /ResetBase
+                if ($LASTEXITCODE -ne 0) { throw "DISM ket thuc voi ma loi $LASTEXITCODE. Kiem tra DISM.log." }
+            } | Out-Null
+        }
+        else {
+            Write-Host "[$taskNumber] [SKIPPED] DISM StartComponentCleanup /ResetBase" -ForegroundColor DarkYellow
+            $script:ToolkitTaskResults += [pscustomobject]@{ Number = $taskNumber; Name = 'Chay DISM StartComponentCleanup /ResetBase'; Status = 'SKIPPED'; Duration = '00:00:00'; Error = '' }
+        }
+
+        $exportFolder = Join-Path $env:ProgramData 'WinCustomizer\Exports'
+        $taskNumber++
+        Invoke-ToolkitTask $taskNumber 'Tao thu muc export' {
+            New-Item -ItemType Directory -Path $exportFolder -Force -ErrorAction Stop | Out-Null
+            Write-Host "      Path: $exportFolder" -ForegroundColor DarkGray
+        } | Out-Null
+
+        $associationsPath = Join-Path $exportFolder 'AppAssociations.xml'
+        $taskNumber++
+        Invoke-ToolkitTask $taskNumber 'Xuat app associations bang DISM' {
+            & "$env:WINDIR\System32\dism.exe" /Online "/Export-DefaultAppAssociations:$associationsPath"
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $associationsPath -PathType Leaf)) {
+                throw "DISM export that bai (ma $LASTEXITCODE)."
+            }
+            Write-Host "      File: $associationsPath" -ForegroundColor DarkGray
+        } | Out-Null
+
+        $exportStartLayout = Get-Command -Name Export-StartLayout -ErrorAction SilentlyContinue
+        $taskNumber++
+        if ($null -ne $exportStartLayout) {
+            $layoutPath = Join-Path $exportFolder 'StartLayout.json'
+            Invoke-ToolkitTask $taskNumber 'Xuat Start layout' {
+                Export-StartLayout -Path $layoutPath -ErrorAction Stop
+                if (-not (Test-Path -LiteralPath $layoutPath -PathType Leaf)) { throw 'Lenh khong tao ra file StartLayout.json.' }
+                Write-Host "      File: $layoutPath" -ForegroundColor DarkGray
+            } | Out-Null
+        }
+        else {
+            Write-Host "[$taskNumber] [SKIPPED] Xuat Start layout - khong co Export-StartLayout" -ForegroundColor DarkYellow
+            $script:ToolkitTaskResults += [pscustomobject]@{ Number = $taskNumber; Name = 'Xuat Start layout'; Status = 'SKIPPED'; Duration = '00:00:00'; Error = 'Cmdlet khong co tren ban Windows nay' }
         }
     }
     finally {
-        if ($wasRunning) {
-            try {
-                Start-Service -Name wuauserv -ErrorAction Stop
-            }
-            catch {
-                Write-Warning "Khong khoi dong lai duoc Windows Update: $($_.Exception.Message)"
-            }
-        }
+        $taskNumber++
+        Invoke-ToolkitTask $taskNumber 'Khoi dong lai Windows Update' {
+            if ($wasRunning) { Start-Service -Name wuauserv -ErrorAction Stop }
+            else { Write-Host '      Giữ nguyen trang thai dang dung.' -ForegroundColor DarkGray }
+        } | Out-Null
     }
 
-    if (Read-YesNo 'Chay DISM StartComponentCleanup /ResetBase? Update hien co se khong go cai dat duoc') {
-        & "$env:WINDIR\System32\dism.exe" /Online /Cleanup-Image /StartComponentCleanup /ResetBase
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "DISM ket thuc voi ma loi $LASTEXITCODE. Kiem tra DISM.log."
-        }
-        else {
-            Write-Host 'DISM component cleanup hoan tat.' -ForegroundColor Green
-        }
+    Write-Host "`n=== TONG KET BUOC 1 ===" -ForegroundColor Cyan
+    $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
+    $failed = @($script:ToolkitTaskResults | Where-Object Status -eq 'FAILED')
+    if ($failed.Count -gt 0) {
+        Write-Host "BUOC 1 CO $($failed.Count) TASK LOI. Hay sua loi truoc khi sang buoc 2." -ForegroundColor Red
     }
     else {
-        Write-Host 'Da bo qua /ResetBase.' -ForegroundColor Yellow
+        Write-Host 'BUOC 1 HOAN TAT; khong co task FAILED.' -ForegroundColor Green
     }
-
-    $exportFolder = Join-Path $env:ProgramData 'WinCustomizer\Exports'
-    New-Item -ItemType Directory -Path $exportFolder -Force | Out-Null
-    $associationsPath = Join-Path $exportFolder 'AppAssociations.xml'
-    & "$env:WINDIR\System32\dism.exe" /Online "/Export-DefaultAppAssociations:$associationsPath"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Da xuat app associations: $associationsPath" -ForegroundColor Green
-    }
-    else {
-        Write-Warning "DISM export app associations that bai (ma $LASTEXITCODE)."
-    }
-
-    $exportStartLayout = Get-Command -Name Export-StartLayout -ErrorAction SilentlyContinue
-    if ($null -ne $exportStartLayout) {
-        $layoutPath = Join-Path $exportFolder 'StartLayout.json'
-        try {
-            Export-StartLayout -Path $layoutPath -ErrorAction Stop
-            Write-Host "Da xuat Start layout: $layoutPath" -ForegroundColor Green
-        }
-        catch {
-            Write-Warning "Khong xuat duoc Start layout: $($_.Exception.Message)"
-        }
-    }
-    else {
-        Write-Warning 'Khong tim thay Export-StartLayout tren ban Windows nay; bo qua.'
-    }
-
-    Write-Host 'Hoan tat buoc 1. Cac file export khong tu dong duoc ap dung vao image.' -ForegroundColor Green
 }
 
 function Convert-SecureStringToPlainText {
