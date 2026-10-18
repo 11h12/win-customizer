@@ -248,10 +248,8 @@ function Invoke-Step2_GenerateUnattendXml {
         $passwordEncoded = Read-LocalAdminPassword
     }
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
-    $exportWifi = Read-YesNo 'Xuat profile Wi-Fi hien tai de backup rieng? File co the chua key mang; mac dinh la No'
     $backupPath = Read-Host 'Thu muc backup tuy chon (Enter de bo qua)'
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) { $backupPath = [System.IO.Path]::GetFullPath($backupPath) }
-    if ($exportWifi -and [string]::IsNullOrWhiteSpace($backupPath)) { Write-Warning 'Da chon Wi-Fi nhung khong co thu muc backup; se bo qua xuat Wi-Fi.'; $exportWifi = $false }
     $copyProfileXml = ''
     if ($copyProfile) {
         $copyProfileXml = @'
@@ -338,11 +336,6 @@ $localAccountXml
         New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
         Copy-Item -LiteralPath $targetPath -Destination (Join-Path $backupPath 'unattend.xml') -Force
         Write-Host "Da backup answer file: $(Join-Path $backupPath 'unattend.xml')" -ForegroundColor Yellow
-        if ($exportWifi) {
-            & netsh.exe wlan export profile folder="$backupPath\WiFi" key=clear | Out-Null
-            if ($LASTEXITCODE -ne 0) { Write-Warning 'Khong xuat duoc Wi-Fi profile.' }
-            else { Write-Warning "Wi-Fi profile da xuat vao $backupPath\WiFi; file co the chua key mang." }
-        }
     }
     Write-Host "Da tao answer file: $targetPath" -ForegroundColor Green
     Write-Host 'Windows SIM voi catalog dung version van la buoc xac minh bat buoc truoc Sysprep.' -ForegroundColor Yellow

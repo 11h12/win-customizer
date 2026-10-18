@@ -73,8 +73,6 @@ Mặc định script không bật AutoLogon. AutoLogon nhiều lần hoặc tài
 
 Các mục OOBE được cấu hình riêng thay vì dùng `SkipMachineOOBE`, mục Microsoft khuyến nghị không dùng để tự động hóa OOBE. Script không đặt `BypassNRO`: đây không phải cấu hình triển khai ổn định. Các trang không được cấu hình vẫn có thể xuất hiện; kiểm tra answer file bằng Windows SIM đúng catalog/bản Windows trước khi dùng.
 
-Tài liệu gốc có đề cập tự kết nối Wi-Fi nhưng không cung cấp profile hay thông tin mạng. Toolkit này không lưu hoặc tự kết nối Wi-Fi. Nếu cần, triển khai Wi-Fi profile riêng qua kênh bảo mật; tuyệt đối không commit file profile có khóa mạng.
-
 ## 4. Chạy Sysprep và capture WIM
 
 1. Hoàn tất tùy biến và cập nhật. Trước Sysprep, ngắt mạng theo quy trình vận hành của bạn để tránh thay đổi ngoài dự kiến trong giai đoạn chốt image.

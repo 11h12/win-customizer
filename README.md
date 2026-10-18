@@ -5,7 +5,7 @@ Toolkit PowerShell hỗ trợ chuẩn bị máy Windows tham chiếu, tạo answ
 ## Thành phần
 
 - [`scripts/WinCustomizer_Toolkit.ps1`](scripts/WinCustomizer_Toolkit.ps1): menu tương tác gồm dọn dẹp/xuất cấu hình, tạo `unattend.xml`, chạy Sysprep và đóng gói ISO bằng AnyBurn CLI.
-- [`templates/unattend.template.xml`](templates/unattend.template.xml): mẫu XML an toàn không chứa mật khẩu hoặc Wi-Fi key. Mục 2 tạo file riêng tại thư mục Sysprep theo các lựa chọn của bạn.
+- [`templates/unattend.template.xml`](templates/unattend.template.xml): mẫu XML an toàn không chứa mật khẩu. Mục 2 tạo file riêng tại thư mục Sysprep theo các lựa chọn của bạn.
 - [`docs/BUILD_GUIDE_VI.md`](docs/BUILD_GUIDE_VI.md): quy trình dựng image từ Audit Mode đến kiểm tra ISO.
 - [`docs/PUBLISH_AND_RUN_VI.md`](docs/PUBLISH_AND_RUN_VI.md): đưa script lên GitHub và chạy từ URL Raw.
 - [`docs/REFERENCES.md`](docs/REFERENCES.md): tài liệu tham khảo chính thức.
@@ -25,9 +25,9 @@ Script không tự chạy các bước phá hủy: dọn Component Store, Syspre
 
 - Script cần quyền Administrator. Hãy xem mã nguồn trước khi chạy, nhất là khi tải trực tiếp từ Internet.
 - Mật khẩu local admin được hỏi lúc tạo answer file. Giá trị trong XML được mã hóa Base64 theo định dạng Windows SIM, **không phải mã hóa bảo mật**. File answer có thông tin nhạy cảm; không commit hoặc phát hành file đó.
-- Mặc định không bật AutoLogon, không tạo mật khẩu trống, không lưu thông tin Wi-Fi và không dùng `SkipMachineOOBE`/`BypassNRO`.
+- Mặc định không bật AutoLogon, không tạo mật khẩu trống và không dùng `SkipMachineOOBE`/`BypassNRO`.
 - `CopyProfile`, association mặc định và Start layout không bảo đảm sao chép mọi cài đặt hay ứng dụng. Kiểm tra lại trên đúng bản Windows sẽ triển khai.
-- Ứng dụng đã cài nằm trong WIM; `unattend.xml` không sao chép ứng dụng. Wi-Fi chỉ được xuất riêng khi bạn chủ động chọn, và profile xuất với `key=clear` có thể chứa khóa mạng.
+- Ứng dụng đã cài nằm trong WIM; `unattend.xml` không sao chép ứng dụng.
 - Lệnh tải `irm ... | iex` thực thi ngay nội dung URL với quyền của PowerShell hiện tại. Nên ưu tiên tải bản gắn tag, đọc mã, rồi mới chạy.
 
 Xem [`docs/BUILD_GUIDE_VI.md`](docs/BUILD_GUIDE_VI.md) và [`docs/PUBLISH_AND_RUN_VI.md`](docs/PUBLISH_AND_RUN_VI.md) để biết đầy đủ các bước.
