@@ -400,6 +400,65 @@ function Invoke-Step3_RunSysprep {
     $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
 }
 
+function Invoke-Step5_CaptureWim {
+    Clear-Host
+    Write-Host '=== BUOC 5: CAPTURE WIM TRONG WINPE ===' -ForegroundColor Cyan
+    Write-Warning 'Chi chay sau khi Sysprep /shutdown da tat may. Khong capture khi Windows tham chieu dang chay.'
+    $script:ToolkitTaskResults = @()
+    $taskNumber = 0
+
+    $taskNumber++
+    if (-not (Invoke-ToolkitTask $taskNumber 'Hien thi volume va kiem tra cong cu' {
+        if (-not (Test-Path -LiteralPath "$env:WINDIR\System32\dism.exe" -PathType Leaf)) { throw 'Khong tim thay DISM trong moi truong hien tai.' }
+        if (Get-Command Get-Volume -ErrorAction SilentlyContinue) {
+            Get-Volume | Where-Object DriveLetter | Sort-Object DriveLetter | Format-Table DriveLetter, FileSystemLabel, FileSystem, SizeRemaining, Size -AutoSize
+        } else {
+            Get-PSDrive -PSProvider FileSystem | Format-Table Name, Root, Used, Free -AutoSize
+        }
+    })) { return }
+
+    $sourceLetter = (Read-Host 'Ky tu o phan vung Windows tham chieu (vi du W)').Trim().TrimEnd(':').ToUpperInvariant()
+    $destinationLetter = (Read-Host 'Ky tu o luu file WIM (vi du D)').Trim().TrimEnd(':').ToUpperInvariant()
+    $defaultImage = "${destinationLetter}:\install.wim"
+    $imagePath = Read-Host "Duong dan WIM dau ra [$defaultImage]"
+    if ([string]::IsNullOrWhiteSpace($imagePath)) { $imagePath = $defaultImage }
+    $imagePath = [System.IO.Path]::GetFullPath($imagePath)
+    $sourceRoot = "${sourceLetter}:\"
+    $destinationRoot = "${destinationLetter}:\"
+
+    $taskNumber++
+    if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra phan vung source va dich' {
+        if ($sourceLetter -notmatch '^[A-Z]$' -or $destinationLetter -notmatch '^[A-Z]$') { throw 'Ky tu volume phai la mot chu cai A-Z.' }
+        if ($sourceLetter -eq $destinationLetter) { throw 'O luu WIM phai khac o Windows source.' }
+        if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'Windows\System32') -PathType Container)) { throw "Khong tim thay $sourceRoot`Windows\System32. Co the da chon nham volume." }
+        if (-not (Test-Path -LiteralPath $destinationRoot -PathType Container)) { throw "Khong truy cap duoc volume dich $destinationRoot" }
+        if ([System.IO.Path]::GetExtension($imagePath) -ine '.wim') { throw 'File dau ra phai co phan mo rong .wim.' }
+        $parent = Split-Path -Parent $imagePath
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null }
+    })) { return }
+
+    if (Test-Path -LiteralPath $imagePath -PathType Leaf) {
+        if (-not (Read-YesNo "File da ton tai ($imagePath). Ghi de?")) { Write-Host 'Da huy capture.' -ForegroundColor Yellow; return }
+        Remove-Item -LiteralPath $imagePath -Force -ErrorAction Stop
+    }
+    Write-Host "Source: $sourceRoot`nDich:   $imagePath" -ForegroundColor Yellow
+    if (-not (Read-YesNo 'Bat dau capture WIM?')) { Write-Host 'Da huy capture.' -ForegroundColor Yellow; return }
+
+    $taskNumber++
+    Invoke-ToolkitTask $taskNumber 'DISM Capture-Image' {
+        & "$env:WINDIR\System32\dism.exe" /Capture-Image "/ImageFile:$imagePath" "/CaptureDir:$sourceRoot" /Name:'Windows_Custom' /Description:'Custom Windows image' /Compress:max /CheckIntegrity /Verify
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "DISM capture that bai (ma loi $LASTEXITCODE)." }
+    } | Out-Null
+
+    $taskNumber++
+    Invoke-ToolkitTask $taskNumber 'Kiem tra index WIM' {
+        & "$env:WINDIR\System32\dism.exe" /Get-WimInfo "/WimFile:$imagePath"
+        if ($LASTEXITCODE -ne 0) { throw "DISM Get-WimInfo that bai (ma loi $LASTEXITCODE)." }
+    } | Out-Null
+    $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
+    Write-Host "Da capture WIM: $imagePath" -ForegroundColor Green
+}
+
 function Invoke-Step4_BuildISO {
     Clear-Host
     Write-Host '=== BUOC 4: THAY WIM VA DONG GOI ISO ===' -ForegroundColor Cyan
@@ -514,6 +573,7 @@ while ($continueMenu) {
     Write-Host ' 2. Tao Sysprep unattend.xml'
     Write-Host ' 3. Chay Sysprep /generalize /oobe /shutdown'
     Write-Host ' 4. Thay install.wim trong ISO bang AnyBurn CLI'
+    Write-Host ' 5. Capture WIM trong WinPE'
     Write-Host ' Q. Thoat toolkit'
     Write-Host '=================================================' -ForegroundColor Cyan
 
@@ -522,6 +582,7 @@ while ($continueMenu) {
         '2' { Invoke-Step2_GenerateUnattendXml; Pause-Toolkit }
         '3' { Invoke-Step3_RunSysprep; Pause-Toolkit }
         '4' { Invoke-Step4_BuildISO; Pause-Toolkit }
+        '5' { Invoke-Step5_CaptureWim; Pause-Toolkit }
         'Q' { $continueMenu = $false }
         default { Write-Host 'Lua chon khong hop le.' -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }

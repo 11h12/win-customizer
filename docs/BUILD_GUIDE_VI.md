@@ -107,7 +107,22 @@ Các mục OOBE được cấu hình riêng thay vì dùng `SkipMachineOOBE`, m�
    dism /Get-WimInfo /WimFile:D:\install.wim
    ```
 
-## 5. Thay WIM và đóng gói ISO
+## 5. Capture WIM bằng toolkit trong WinPE
+
+Sau khi Sysprep đã tắt máy, boot USB WinPE. Chạy toolkit bằng PowerShell nếu WinPE của bạn có PowerShell, chọn mục `5`. Toolkit sẽ liệt kê volume, yêu cầu chọn:
+
+- ổ chứa Windows tham chiếu, phải có `Windows\System32`;
+- ổ lưu WIM, bắt buộc khác ổ source;
+- đường dẫn file `.wim` đầu ra.
+
+Toolkit chạy `DISM /Capture-Image` với `/Compress:max /CheckIntegrity /Verify`, sau đó chạy `/Get-WimInfo` để kiểm tra index. Nếu WinPE không có PowerShell, dùng lệnh DISM thủ công:
+
+```text
+dism /Capture-Image /ImageFile:D:\install.wim /CaptureDir:W:\ /Name:"Windows_Custom" /Description:"Custom Windows image" /Compress:max /CheckIntegrity /Verify
+dism /Get-WimInfo /WimFile:D:\install.wim
+```
+
+## 6. Thay WIM và đóng gói ISO
 
 1. Khởi động lại vào Windows đã cài AnyBurn. Không boot lại máy tham chiếu đã Sysprep để sử dụng tiếp làm máy thường.
 2. Chạy toolkit, chọn mục `4`, nhập ISO gốc, WIM vừa capture và đường dẫn ISO đầu ra. Script chỉ hỗ trợ ISO có `sources\install.wim` hoặc `sources\install.esd`; ISO dùng bộ `install*.swm` chia phần cần quy trình riêng.
