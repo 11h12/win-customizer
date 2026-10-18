@@ -1,4 +1,4 @@
-# Windows Customizer Toolkit 2.4.0
+# Windows Customizer Toolkit 2.5.0
 # Requires Windows PowerShell 5.1 and an elevated session.
 # Review this script before running it, especially when downloaded from a URL.
 
@@ -27,14 +27,17 @@ function Remove-FolderContents {
         return
     }
 
+    $failed = 0
     Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
         }
         catch {
+            $failed++
             Write-Warning "Khong xoa duoc '$($_.FullName)': $($_.Exception.Message)"
         }
     }
+    if ($failed -gt 0) { throw "$failed item(s) khong xoa duoc trong $Path." }
 }
 
 function Invoke-ToolkitTask {
@@ -235,6 +238,7 @@ function Invoke-Step2_GenerateUnattendXml {
     Write-Host '=== BUOC 2: TAO UNATTEND.XML ===' -ForegroundColor Cyan
     Write-Warning 'Answer file chua thong tin tai khoan. Base64 khong phai ma hoa; khong commit hoac chia se file.'
 
+    $script:ToolkitTaskResults = @()
     $adminUser = Read-LocalAdminName
     $passwordEncoded = Read-LocalAdminPassword
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
@@ -294,26 +298,42 @@ $driverSettings
 </unattend>
 "@
 
-    try {
+    $taskNumber = 0
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Parse va kiem tra XML' {
         $xmlDocument = [xml]$unattendXml
+        if ($xmlDocument.DocumentElement.LocalName -ne 'unattend') { throw 'Root XML khong phai unattend.' }
+        $copy = $xmlDocument.SelectSingleNode("//*[local-name()='CopyProfile']")
+        if ($null -eq $copy -or $copy.InnerText -ine 'true') { throw 'Thieu CopyProfile=true trong pass specialize.' }
+    })){ $passwordEncoded = $null; return }
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Ghi answer file va gioi han quyen doc' {
         [System.IO.File]::WriteAllText($targetPath, $unattendXml, [System.Text.UTF8Encoding]::new($false))
         & "$env:WINDIR\System32\icacls.exe" $targetPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Remove-Item -LiteralPath $targetPath -Force -ErrorAction SilentlyContinue
-            throw 'icacls khong the gioi han quyen doc answer file; file vua tao da bi xoa.'
-        }
-    }
-    catch {
-        throw "Khong tao duoc answer file: $($_.Exception.Message)"
-    }
-    finally {
-        $passwordEncoded = $null
-        $unattendXml = $null
-        $xmlDocument = $null
-    }
-
+        if ($LASTEXITCODE -ne 0) { throw 'icacls khong gioi han duoc quyen doc answer file.' }
+    })){ $passwordEncoded = $null; return }
+    $passwordEncoded = $null; $unattendXml = $null
     Write-Host "Da tao answer file: $targetPath" -ForegroundColor Green
-    Write-Host 'Hay validate bang Windows SIM voi catalog cua dung ban Windows truoc khi Sysprep.' -ForegroundColor Yellow
+    Write-Host 'Windows SIM voi catalog dung version van la buoc xac minh bat buoc truoc Sysprep.' -ForegroundColor Yellow
+    $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
+}
+
+function Test-UnattendForSysprep {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $doc = New-Object System.Xml.XmlDocument
+    $doc.PreserveWhitespace = $true
+    $doc.Load($Path)
+    $ns = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
+    $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+    $copy = $doc.SelectNodes('/u:unattend/u:settings[@pass="specialize"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:CopyProfile', $ns)
+    if ($copy.Count -ne 1 -or $copy[0].InnerText -ine 'true') { throw 'Answer file phai co dung mot CopyProfile=true trong pass specialize.' }
+    $account = $doc.SelectSingleNode('/u:unattend/u:settings[@pass="oobeSystem"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:UserAccounts/u:LocalAccounts/u:LocalAccount', $ns)
+    $accountName = $account.SelectSingleNode('./u:Name', $ns)
+    if ($null -eq $account -or $null -eq $accountName -or [string]::IsNullOrWhiteSpace($accountName.InnerText)) { throw 'Khong co LocalAccount hop le trong oobeSystem.' }
+    $password = $account.SelectSingleNode('./u:Password/u:Value', $ns)
+    if ($null -eq $password -or [string]::IsNullOrWhiteSpace($password.InnerText)) { throw 'LocalAccount khong co password.' }
+    try { [void][Convert]::FromBase64String($password.InnerText) } catch { throw 'Password trong answer file khong phai Base64 Unicode hop le.' }
+    if ($doc.SelectNodes('//*[local-name()="SkipMachineOOBE" or local-name()="SkipUserOOBE"]').Count -gt 0) { throw 'Khong cho phep SkipMachineOOBE/SkipUserOOBE.' }
+    if ($doc.OuterXml -match '(?i)BypassNRO|AutoLogon') { throw 'Khong cho phep BypassNRO hoac AutoLogon trong answer file nay.' }
+    return $accountName.InnerText
 }
 
 function Invoke-Step3_RunSysprep {
@@ -331,18 +351,27 @@ function Invoke-Step3_RunSysprep {
         return
     }
 
+    $script:ToolkitTaskResults = @()
+    $taskNumber = 0
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra answer file Sysprep' { $account = Test-UnattendForSysprep -Path $unattendPath; Write-Host "      Account: $account" -ForegroundColor DarkGray })){ return }
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra profile truoc khi CopyProfile' {
+        $usersPath = Join-Path $env:SystemDrive 'Users'
+        $dirs = @(Get-ChildItem -LiteralPath $usersPath -Directory -ErrorAction Stop | Where-Object { $_.Name -notin @('Default','Default User','Public','All Users') })
+        if ($dirs.Count -gt 1) { Write-Warning ('Phat hien nhieu profile: ' + (($dirs | Select-Object -ExpandProperty Name) -join ', ') + '. CopyProfile co the lay sai profile.') }
+    })){ return }
     Write-Host 'Kiem tra cap nhat, file answer, va ngat ket noi mang truoc khi tiep tuc.' -ForegroundColor Yellow
-    Write-Host 'Sysprep generalize se chuan bi lai Windows va may se tat khi thanh cong.' -ForegroundColor Red
+    Write-Host 'Sysprep /generalize se xoa thong tin may va /shutdown se tat may khi thanh cong.' -ForegroundColor Red
     $confirmation = Read-Host 'Go SYSPREP de xac nhan'
     if ($confirmation -cne 'SYSPREP') {
         Write-Host 'Da huy Sysprep.' -ForegroundColor Yellow
         return
     }
 
-    & $sysprepPath /generalize /oobe /shutdown "/unattend:$unattendPath"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Sysprep ket thuc voi ma loi $LASTEXITCODE. Kiem tra Panther logs truoc khi thu lai."
-    }
+    $taskNumber++; Invoke-ToolkitTask $taskNumber 'Chay Sysprep /generalize /oobe /shutdown' {
+        & $sysprepPath /generalize /oobe /shutdown "/unattend:$unattendPath"
+        if ($LASTEXITCODE -ne 0) { throw "Sysprep ket thuc voi ma loi $LASTEXITCODE. Kiem tra %WINDIR%\System32\Sysprep\Panther\setupact.log va setuperr.log." }
+    } | Out-Null
+    $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
 }
 
 function Invoke-Step4_BuildISO {
@@ -356,21 +385,13 @@ function Invoke-Step4_BuildISO {
         $isoOutput = Join-Path (Get-Location).Path 'Windows_Custom.iso'
     }
 
-    foreach ($requiredPath in @($isoSource, $capturedWim)) {
-        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
-            Write-Error "Khong tim thay file: $requiredPath"
-            return
-        }
-    }
-    if ([System.IO.Path]::GetExtension($isoSource) -ine '.iso' -or [System.IO.Path]::GetExtension($isoOutput) -ine '.iso') {
-        Write-Error 'ISO dau vao va dau ra phai co phan mo rong .iso.'
-        return
-    }
-    if ([System.IO.Path]::GetFullPath($isoSource) -ieq [System.IO.Path]::GetFullPath($isoOutput)) {
-        Write-Error 'ISO dau ra phai la file khac ISO goc.'
-        return
-    }
-
+    $script:ToolkitTaskResults = @(); $taskNumber = 0
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra file dau vao' {
+        foreach ($requiredPath in @($isoSource, $capturedWim)) { if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) { throw "Khong tim thay file: $requiredPath" } }
+        if ([System.IO.Path]::GetExtension($isoSource) -ine '.iso' -or [System.IO.Path]::GetExtension($isoOutput) -ine '.iso') { throw 'ISO dau vao va dau ra phai co phan mo rong .iso.' }
+        if ([System.IO.Path]::GetFullPath($isoSource) -ieq [System.IO.Path]::GetFullPath($isoOutput)) { throw 'ISO dau ra phai la file khac ISO goc.' }
+        if ((Get-Item -LiteralPath $capturedWim).Length -lt 1MB) { throw 'install.wim qua nho hoac rong.' }
+    })){ return }
     $anyBurnCmd = @(
         'C:\Program Files\AnyBurn\abcmd.exe',
         'C:\Program Files (x86)\AnyBurn\abcmd.exe'
@@ -378,14 +399,12 @@ function Invoke-Step4_BuildISO {
     if (-not $anyBurnCmd) {
         $anyBurnCmd = Read-Host 'Khong tim thay abcmd.exe mac dinh. Nhap duong dan abcmd.exe'
     }
-    if (-not (Test-Path -LiteralPath $anyBurnCmd -PathType Leaf)) {
-        Write-Error "Khong tim thay AnyBurn CLI: $anyBurnCmd"
-        return
-    }
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra AnyBurn CLI' { if (-not (Test-Path -LiteralPath $anyBurnCmd -PathType Leaf)) { throw "Khong tim thay AnyBurn CLI: $anyBurnCmd" } })){ return }
 
     $imageToReplace = $null
     $diskImage = $null
-    try {
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Kiem tra install image trong ISO goc' {
+      try {
         $diskImage = Mount-DiskImage -ImagePath $isoSource -PassThru -ErrorAction Stop
         $volume = $diskImage | Get-Volume -ErrorAction Stop | Where-Object { $_.DriveLetter } | Select-Object -First 1
         if ($null -eq $volume) {
@@ -404,23 +423,19 @@ function Invoke-Step4_BuildISO {
         else {
             throw 'Khong tim thay sources\install.wim hoac install.esd trong ISO goc.'
         }
-    }
-    catch {
-        Write-Error "Khong kiem tra duoc ISO goc: $($_.Exception.Message)"
-        return
-    }
-    finally {
+      } catch { throw "Khong kiem tra duoc ISO goc: $($_.Exception.Message)" }
+      finally {
         if ($null -ne $diskImage) {
             Dismount-DiskImage -ImagePath $isoSource -ErrorAction SilentlyContinue | Out-Null
         }
-    }
+      }
+    })){ return }
 
     if (Test-Path -LiteralPath $isoOutput) {
         if (-not (Read-YesNo "File dau ra da ton tai ($isoOutput). Ghi de?")) {
             Write-Host 'Da huy dong goi ISO.' -ForegroundColor Yellow
             return
         }
-        Remove-Item -LiteralPath $isoOutput -Force -ErrorAction Stop
     }
 
     Write-Host "Se thay sources\$imageToReplace bang WIM da capture." -ForegroundColor Yellow
@@ -428,6 +443,7 @@ function Invoke-Step4_BuildISO {
         Write-Host 'Da huy dong goi ISO.' -ForegroundColor Yellow
         return
     }
+    if (Test-Path -LiteralPath $isoOutput) { Remove-Item -LiteralPath $isoOutput -Force -ErrorAction Stop }
 
     $arguments = @(
         '-edit', $isoSource,
@@ -435,11 +451,19 @@ function Invoke-Step4_BuildISO {
         '-add', $capturedWim, '\sources\',
         '-save', $isoOutput
     )
-    & $anyBurnCmd @arguments
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $isoOutput -PathType Leaf)) {
-        Write-Error "AnyBurn khong tao duoc ISO (ma loi $LASTEXITCODE). Kiem tra tham so theo ban AnyBurn CLI cua ban."
-        return
-    }
+    $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'AnyBurn tao ISO' {
+        & $anyBurnCmd @arguments
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $isoOutput -PathType Leaf)) { throw "AnyBurn khong tao duoc ISO (ma loi $LASTEXITCODE)." }
+    })){ return }
+    $taskNumber++; Invoke-ToolkitTask $taskNumber 'Xac minh ISO dau ra co install.wim' {
+        if (-not (Get-Command Mount-DiskImage -ErrorAction SilentlyContinue)) { throw 'Khong co Mount-DiskImage tren may nay.' }
+        $outDisk = Mount-DiskImage -ImagePath $isoOutput -PassThru -ErrorAction Stop
+        try {
+            $outVol = $outDisk | Get-Volume -ErrorAction Stop | Where-Object DriveLetter | Select-Object -First 1
+            if ($null -eq $outVol -or -not (Test-Path "$($outVol.DriveLetter):\sources\install.wim")) { throw 'ISO dau ra khong co sources\install.wim.' }
+        } finally { Dismount-DiskImage -ImagePath $isoOutput -ErrorAction SilentlyContinue | Out-Null }
+    } | Out-Null
+    $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
 
     Write-Host "Da tao ISO: $isoOutput" -ForegroundColor Green
     Write-Host 'Hay mount ISO, kiem tra WIM va boot thu trong VM truoc khi phat hanh.' -ForegroundColor Yellow
@@ -458,7 +482,7 @@ $continueMenu = $true
 while ($continueMenu) {
     Clear-Host
     Write-Host '=================================================' -ForegroundColor Cyan
-    Write-Host ' WINDOWS CUSTOMIZER AUTOMATION TOOLKIT 2.4.0' -ForegroundColor Yellow
+    Write-Host ' WINDOWS CUSTOMIZER AUTOMATION TOOLKIT 2.5.0' -ForegroundColor Yellow
     Write-Host '=================================================' -ForegroundColor Cyan
     Write-Host ' 1. Don dep va xuat app associations/Start layout'
     Write-Host ' 2. Tao Sysprep unattend.xml'
