@@ -117,9 +117,9 @@ Sau khi Sysprep đã tắt máy, boot USB WinPE. Chạy toolkit bằng PowerShel
 
 - ổ chứa Windows tham chiếu, phải có `Windows\System32`;
 - ổ lưu WIM, bắt buộc khác ổ source;
-- đường dẫn file `.wim` đầu ra.
+- đường dẫn file `.wim` hoặc `.esd` đầu ra. Nếu chọn `.esd`, toolkit capture WIM trung gian rồi dùng `DISM /Export-Image /Compress:recovery` để chuyển đổi.
 
-Toolkit chạy `DISM /Capture-Image` với `/Compress:max /CheckIntegrity /Verify`, sau đó chạy `/Get-WimInfo` để kiểm tra index. Nếu WinPE không có PowerShell, dùng lệnh DISM thủ công:
+Toolkit chạy `DISM /Capture-Image` với `/Compress:max /CheckIntegrity /Verify`, sau đó chạy `/Get-WimInfo` để kiểm tra index. Nếu chọn ESD, image được nén lại bằng `/Compress:recovery`. Nếu WinPE không có PowerShell, dùng lệnh DISM thủ công:
 
 ```text
 dism /Capture-Image /ImageFile:D:\install.wim /CaptureDir:W:\ /Name:"Windows_Custom" /Description:"Custom Windows image" /Compress:max /CheckIntegrity /Verify
@@ -129,14 +129,14 @@ dism /Get-WimInfo /WimFile:D:\install.wim
 ## 6. Thay WIM và đóng gói ISO
 
 1. Khởi động lại vào Windows đã cài AnyBurn. Không boot lại máy tham chiếu đã Sysprep để sử dụng tiếp làm máy thường.
-2. Chạy toolkit, chọn mục `5`, nhập ISO gốc, WIM vừa capture và đường dẫn ISO đầu ra. Script chỉ hỗ trợ ISO có `sources\install.wim` hoặc `sources\install.esd`; ISO dùng bộ `install*.swm` chia phần cần quy trình riêng.
+2. Chạy toolkit, chọn mục `5`, nhập ISO gốc, WIM/ESD vừa capture và đường dẫn ISO đầu ra. Script hỗ trợ image `.wim` hoặc `.esd`; ISO gốc có `sources\install.wim` hoặc `sources\install.esd`. ISO dùng bộ `install*.swm` chia phần cần quy trình riêng.
 3. Toolkit dùng AnyBurn CLI theo mẫu lệnh sau để thay image trong thư mục `sources`:
 
    ```text
    abcmd.exe -edit <Windows_Original.iso> -delete "\sources\install.wim" -add <install.wim> "\sources\" -save <Windows_Custom.iso>
    ```
 
-   Nếu ISO gốc có `install.esd`, script sẽ thay đúng file đó bằng WIM. Đối chiếu tham số với phiên bản `abcmd.exe` đã cài nếu CLI báo lỗi.
+   Script sẽ thay image cũ bằng đúng file WIM/ESD bạn chỉ định. Đối chiếu tham số với phiên bản `abcmd.exe` đã cài nếu CLI báo lỗi.
 4. Mount ISO đầu ra và xác nhận `sources\install.wim` mở được; sau đó boot thử ISO trong máy ảo (bao gồm kiểm tra OOBE, account, driver, activation và Windows Update) trước khi phát hành.
 
 ## Quy trình ngắn

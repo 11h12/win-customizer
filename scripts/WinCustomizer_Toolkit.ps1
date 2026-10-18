@@ -471,7 +471,7 @@ function Invoke-Step5_CaptureWim {
     $sourceLetter = (Read-Host 'Ky tu o phan vung Windows tham chieu (vi du W)').Trim().TrimEnd(':').ToUpperInvariant()
     $destinationLetter = (Read-Host 'Ky tu o luu file WIM (vi du D)').Trim().TrimEnd(':').ToUpperInvariant()
     $defaultImage = "${destinationLetter}:\install.wim"
-    $imagePath = Read-Host "Duong dan WIM dau ra [$defaultImage]"
+    $imagePath = Read-Host "Duong dan image dau ra (.wim hoac .esd) [$defaultImage]"
     if ([string]::IsNullOrWhiteSpace($imagePath)) { $imagePath = $defaultImage }
     $imagePath = [System.IO.Path]::GetFullPath($imagePath)
     $sourceRoot = "${sourceLetter}:\"
@@ -483,7 +483,7 @@ function Invoke-Step5_CaptureWim {
         if ($sourceLetter -eq $destinationLetter) { throw 'O luu WIM phai khac o Windows source.' }
         if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'Windows\System32') -PathType Container)) { throw "Khong tim thay $sourceRoot`Windows\System32. Co the da chon nham volume." }
         if (-not (Test-Path -LiteralPath $destinationRoot -PathType Container)) { throw "Khong truy cap duoc volume dich $destinationRoot" }
-        if ([System.IO.Path]::GetExtension($imagePath) -ine '.wim') { throw 'File dau ra phai co phan mo rong .wim.' }
+        if ([System.IO.Path]::GetExtension($imagePath) -inotmatch '^\.(wim|esd)$') { throw 'File dau ra phai co phan mo rong .wim hoac .esd.' }
         $parent = Split-Path -Parent $imagePath
         if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null }
     })) { return }
@@ -496,10 +496,22 @@ function Invoke-Step5_CaptureWim {
     if (-not (Read-YesNo 'Bat dau capture WIM?')) { Write-Host 'Da huy capture.' -ForegroundColor Yellow; return }
 
     $taskNumber++
+    $captureWim = $imagePath
+    $convertToEsd = [System.IO.Path]::GetExtension($imagePath) -ieq '.esd'
+    if ($convertToEsd) { $captureWim = "$imagePath.capture.wim" }
     Invoke-ToolkitTask $taskNumber 'DISM Capture-Image' {
-        $dismCode = Invoke-DismWithProgress -Activity 'DISM Capture-Image' -Arguments @('/Capture-Image', "/ImageFile:$imagePath", "/CaptureDir:$sourceRoot", '/Name:Windows_Custom', '/Description:Custom Windows image', '/Compress:max', '/CheckIntegrity', '/Verify')
-        if ($dismCode -ne 0 -or -not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "DISM capture that bai (ma loi $dismCode)." }
+        $dismCode = Invoke-DismWithProgress -Activity 'DISM Capture-Image' -Arguments @('/Capture-Image', "/ImageFile:$captureWim", "/CaptureDir:$sourceRoot", '/Name:Windows_Custom', '/Description:Custom Windows image', '/Compress:max', '/CheckIntegrity', '/Verify')
+        if ($dismCode -ne 0 -or -not (Test-Path -LiteralPath $captureWim -PathType Leaf)) { throw "DISM capture that bai (ma loi $dismCode)." }
     } | Out-Null
+
+    if ($convertToEsd) {
+        $taskNumber++
+        Invoke-ToolkitTask $taskNumber 'Chuyen WIM sang ESD' {
+            $dismCode = Invoke-DismWithProgress -Activity 'DISM Export-Image /Compress:recovery' -Arguments @('/Export-Image', "/SourceImageFile:$captureWim", '/SourceIndex:1', "/DestinationImageFile:$imagePath", '/Compress:recovery', '/CheckIntegrity')
+            if ($dismCode -ne 0 -or -not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "DISM export ESD that bai (ma loi $dismCode)." }
+            Remove-Item -LiteralPath $captureWim -Force -ErrorAction Stop
+        } | Out-Null
+    }
 
     $taskNumber++
     Invoke-ToolkitTask $taskNumber 'Kiem tra index WIM' {
@@ -515,7 +527,7 @@ function Invoke-Step4_BuildISO {
     Write-Host '=== BUOC 4: THAY WIM VA DONG GOI ISO ===' -ForegroundColor Cyan
 
     $isoSource = Read-Host 'Duong dan ISO Windows goc'
-    $capturedWim = Read-Host 'Duong dan file install.wim da capture'
+    $capturedWim = Read-Host 'Duong dan file install.wim/install.esd da capture'
     $isoOutput = Read-Host 'Duong dan ISO dau ra [Windows_Custom.iso]'
     if ([string]::IsNullOrWhiteSpace($isoOutput)) {
         $isoOutput = Join-Path (Get-Location).Path 'Windows_Custom.iso'
@@ -526,7 +538,8 @@ function Invoke-Step4_BuildISO {
         foreach ($requiredPath in @($isoSource, $capturedWim)) { if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) { throw "Khong tim thay file: $requiredPath" } }
         if ([System.IO.Path]::GetExtension($isoSource) -ine '.iso' -or [System.IO.Path]::GetExtension($isoOutput) -ine '.iso') { throw 'ISO dau vao va dau ra phai co phan mo rong .iso.' }
         if ([System.IO.Path]::GetFullPath($isoSource) -ieq [System.IO.Path]::GetFullPath($isoOutput)) { throw 'ISO dau ra phai la file khac ISO goc.' }
-        if ((Get-Item -LiteralPath $capturedWim).Length -lt 1MB) { throw 'install.wim qua nho hoac rong.' }
+        if ([System.IO.Path]::GetExtension($capturedWim) -inotmatch '^\.(wim|esd)$') { throw 'Image dau vao phai co phan mo rong .wim hoac .esd.' }
+        if ((Get-Item -LiteralPath $capturedWim).Length -lt 1MB) { throw 'Image qua nho hoac rong.' }
     })){ return }
     $anyBurnCmd = @(
         'C:\Program Files\AnyBurn\abcmd.exe',
@@ -574,7 +587,8 @@ function Invoke-Step4_BuildISO {
         }
     }
 
-    Write-Host "Se thay sources\$imageToReplace bang WIM da capture." -ForegroundColor Yellow
+    $imageToAdd = [System.IO.Path]::GetFileName($capturedWim)
+    Write-Host "Se thay sources\$imageToReplace bang $imageToAdd." -ForegroundColor Yellow
     if (-not (Read-YesNo "Tao ISO tai '$isoOutput'?")) {
         Write-Host 'Da huy dong goi ISO.' -ForegroundColor Yellow
         return
@@ -591,12 +605,12 @@ function Invoke-Step4_BuildISO {
         & $anyBurnCmd @arguments
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $isoOutput -PathType Leaf)) { throw "AnyBurn khong tao duoc ISO (ma loi $LASTEXITCODE)." }
     })){ return }
-    $taskNumber++; Invoke-ToolkitTask $taskNumber 'Xac minh ISO dau ra co install.wim' {
+    $taskNumber++; Invoke-ToolkitTask $taskNumber "Xac minh ISO dau ra co $imageToAdd" {
         if (-not (Get-Command Mount-DiskImage -ErrorAction SilentlyContinue)) { throw 'Khong co Mount-DiskImage tren may nay.' }
         $outDisk = Mount-DiskImage -ImagePath $isoOutput -PassThru -ErrorAction Stop
         try {
             $outVol = $outDisk | Get-Volume -ErrorAction Stop | Where-Object DriveLetter | Select-Object -First 1
-            if ($null -eq $outVol -or -not (Test-Path "$($outVol.DriveLetter):\sources\install.wim")) { throw 'ISO dau ra khong co sources\install.wim.' }
+            if ($null -eq $outVol -or -not (Test-Path (Join-Path "$($outVol.DriveLetter):\sources" $imageToAdd))) { throw "ISO dau ra khong co sources\$imageToAdd." }
         } finally { Dismount-DiskImage -ImagePath $isoOutput -ErrorAction SilentlyContinue | Out-Null }
     } | Out-Null
     $script:ToolkitTaskResults | Format-Table Number, Status, Name, Duration -AutoSize
