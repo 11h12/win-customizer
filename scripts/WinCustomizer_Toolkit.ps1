@@ -263,6 +263,7 @@ function Invoke-Step2_GenerateUnattendXml {
   </settings>
 '@
     }
+    $hideLocalAccountScreen = if ($createLocalAccount) { 'true' } else { 'false' }
     $driverSettings = ''
     if ($preserveDrivers) {
         $driverSettings = @'
@@ -311,7 +312,7 @@ $copyProfileXml
 $localAccountXml
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
-        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideLocalAccountScreen>$hideLocalAccountScreen</HideLocalAccountScreen>
         <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
