@@ -1,15 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Safe template only. Do not put passwords in this file. -->
+<!--
+  Neutral starter file for Windows client Sysprep.
+  This file intentionally sets no locale, keyboard, timezone, account, OOBE,
+  Wi-Fi, or profile values. Use menu item 3 in the toolkit to answer those
+  choices and generate the working file at %WINDIR%\System32\Sysprep\unattend.xml.
+  Do not pass this empty starter to Sysprep as a substitute for a generated file.
+-->
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-  <!-- The toolkit fills optional CopyProfile, driver, and local-account settings at runtime. -->
-  <settings pass="oobeSystem">
-    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <OOBE>
-        <HideEULAPage>true</HideEULAPage>
-        <HideLocalAccountScreen>true</HideLocalAccountScreen>
-        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-        <ProtectYourPC>3</ProtectYourPC>
-      </OOBE>
-    </component>
-  </settings>
 </unattend>

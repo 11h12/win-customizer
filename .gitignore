@@ -12,6 +12,9 @@ unattend.xml
 Autounattend.xml
 **/unattend.xml
 **/Autounattend.xml
+autounattend*.xml
+Autounattend*.xml
+**/.autounattend.*.xml
 
 # Build output and logs
 /output/

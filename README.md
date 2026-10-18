@@ -1,35 +1,42 @@
 # Windows Customizer
 
-Toolkit PowerShell hỗ trợ chuẩn bị máy Windows tham chiếu, tạo answer file cho Sysprep, capture WIM và đóng gói lại ISO.
+PowerShell toolkit hỗ trợ quy trình dựng Windows image: dọn dẹp và xuất cấu hình, tạo `unattend.xml` theo lựa chọn locale/OOBE, chạy Sysprep trong Audit Mode, capture bằng DISM và hoàn thiện WIM/ESD/ISO. Mỗi tác vụ có trạng thái riêng; bước DISM/copy dài hiển thị tiến trình.
 
-Quy trình chuẩn là: vào Audit Mode bằng `Ctrl+Shift+F3`, dùng built-in Administrator để cài driver/app/update và tùy chỉnh, không tạo user tạm; sau đó cleanup, tạo `unattend.xml`, chạy Sysprep, boot WinPE để capture WIM và cuối cùng đóng gói ISO.
+## Quy trình
+
+1. Cài Windows và hoàn thành toàn bộ OOBE bằng một tài khoản tạm. Cài driver, ứng dụng, cập nhật và khởi động lại đến khi Windows Update hoàn tất.
+2. Từ Windows đã setup, mở Sysprep GUI và chọn **Enter System Audit Mode** rồi reboot. Không dùng `Ctrl+Shift+F3` tại OOBE đầu tiên cho quy trình này.
+3. Trước khi vào Audit, export Default apps/Start layout trong user tạm. Trong Audit Mode, xóa profile và tài khoản tạm, cấu hình Desktop/portable app shortcuts, rồi chạy cleanup. Toolkit mở thư mục Start Menu chung: `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`.
+4. Tạo `unattend.xml`, khai báo locale/ngôn ngữ/keyboard/timezone, tùy chọn tạo local account và chọn các trang OOBE. Xác minh bằng Windows SIM đúng phiên bản Windows.
+5. Chạy final Sysprep bằng built-in Administrator (SID kết thúc `-500`); máy sẽ tắt. Boot WinPE và capture phân vùng Windows ra ổ BACKUP.
+6. Trên Windows host, map `BACKUP.vmdk`, copy image vào thư mục build, xem/sửa metadata, append index nếu có nhiều image, mount/import/verify app associations, commit, tùy chọn xuất ESD, thay image trong ISO và verify ISO.
+
+Hướng dẫn đầy đủ và thứ tự từng tác vụ ở [`docs/BUILD_GUIDE_VI.md`](docs/BUILD_GUIDE_VI.md). Đối chiếu từng bước với bài nguồn và các tài liệu Microsoft ở [`docs/SOURCE_AUDIT_VI.md`](docs/SOURCE_AUDIT_VI.md).
 
 ## Thành phần
 
-- [`scripts/WinCustomizer_Toolkit.ps1`](scripts/WinCustomizer_Toolkit.ps1): menu tương tác gồm dọn dẹp/xuất cấu hình, tạo `unattend.xml`, chạy Sysprep và đóng gói ISO bằng AnyBurn CLI.
-- [`templates/unattend.template.xml`](templates/unattend.template.xml): mẫu XML an toàn không chứa mật khẩu. Mục 2 tạo file riêng tại thư mục Sysprep theo các lựa chọn của bạn.
-- [`docs/BUILD_GUIDE_VI.md`](docs/BUILD_GUIDE_VI.md): quy trình dựng image từ Audit Mode đến kiểm tra ISO.
-- [`docs/PUBLISH_AND_RUN_VI.md`](docs/PUBLISH_AND_RUN_VI.md): đưa script lên GitHub và chạy từ URL Raw.
-- [`docs/REFERENCES.md`](docs/REFERENCES.md): tài liệu tham khảo chính thức.
+- [`scripts/WinCustomizer_Toolkit.ps1`](scripts/WinCustomizer_Toolkit.ps1): menu tương tác cho các giai đoạn cleanup, unattend, Sysprep, capture và post-capture.
+- [`templates/unattend.template.xml`](templates/unattend.template.xml): XML khởi đầu trung tính, không cài sẵn locale hay tùy chọn OOBE. Dùng menu 3 để tạo answer file thực tế.
+- [`docs/PUBLISH_AND_RUN_VI.md`](docs/PUBLISH_AND_RUN_VI.md): publish lên GitHub và chạy từ URL Raw.
+- [`docs/REFERENCES.md`](docs/REFERENCES.md): hướng dẫn ManHPC và tài liệu Microsoft.
+- [`docs/SOURCE_AUDIT_VI.md`](docs/SOURCE_AUDIT_VI.md): đối chiếu trình tự các bước, answer-file passes và các giới hạn tự động hóa.
 
-## Bắt đầu
+## Chạy toolkit
 
-Yêu cầu Windows 10/11 x64, Windows PowerShell 5.1 chạy bằng quyền Administrator. Hãy đọc hướng dẫn dựng image trước và thực hành trên máy ảo hoặc máy thử nghiệm có thể khôi phục.
+Cần Windows PowerShell 5.1 trở lên, chạy bằng quyền Administrator. Đọc mã trước khi chạy, nhất là khi tải qua Internet.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 & .\scripts\WinCustomizer_Toolkit.ps1
 ```
 
-Script không tự chạy các bước phá hủy: dọn Component Store, Sysprep (sẽ tắt máy) và thay WIM trong ISO đều cần thao tác xác nhận. Không dùng image thử nghiệm làm máy đang sử dụng.
+Toolkit tạo hai answer file tách biệt: menu 3 tạo `unattend.xml` cho Sysprep/OOBE; post-capture task 16 tạo `autounattend.xml` với pass `windowsPE` và tùy chọn `oobeSystem\Shell-Setup\OOBE\ProtectYourPC`. `autounattend.xml` phải đặt ở gốc media cạnh `setup.exe`. Task 16 có preset chọn Windows 10/11 Pro, nhập key riêng hoặc bỏ ProductKey; key dùng chọn edition không tự kích hoạt Windows. Tùy chọn `ProtectYourPC` bật/tắt Express settings cũ; nó không điều khiển từng công tắc Privacy của Windows 11. Menu 3 hỏi và bắt buộc có `UILanguage`, `SystemLocale`, `UserLocale` (vùng/quốc gia) và `InputLocale` (bàn phím); timezone và fallback là tùy chọn. Menu 3 có thể tạo một local account trong `UserAccounts`, luôn trong nhóm `Administrators` để thiết bị còn tài khoản quản trị khi OOBE bỏ qua bước tạo account; nếu không chọn, OOBE sẽ yêu cầu tạo hoặc đăng nhập account thủ công. Không dùng `SkipMachineOOBE` hoặc các thiết lập Wi-Fi.
+
+Wizard hỏi riêng `UILanguage`, `SystemLocale`, `UserLocale` (mã vùng/quốc gia cùng định dạng, ví dụ `vi-VN`), `InputLocale` (bàn phím), `UILanguageFallback` tùy chọn, `TimeZone`, OOBE choices và tùy chọn tạo local account. Giá trị mặc định là cấu hình Windows hiện tại; nhấn Enter sẽ ghi giá trị mặc định. Bốn giá trị locale/ngôn ngữ/bàn phím bắt buộc để trả lời cấu hình ngôn ngữ/vùng trong OOBE; `TimeZone`/`UILanguageFallback` có thể bỏ. OOBE chưa được cấu hình hết không tự biến mất; Microsoft khuyên không dùng `SkipMachineOOBE`. Cần chọn locale có trong image và kiểm tra answer file bằng Windows SIM trước final Sysprep.
 
 ## Bảo mật và giới hạn
 
-- Script cần quyền Administrator. Hãy xem mã nguồn trước khi chạy, nhất là khi tải trực tiếp từ Internet.
-- Mật khẩu local admin được hỏi lúc tạo answer file. Giá trị trong XML được mã hóa Base64 theo định dạng Windows SIM, **không phải mã hóa bảo mật**. File answer có thông tin nhạy cảm; không commit hoặc phát hành file đó.
-- Mặc định không bật AutoLogon, không lưu username/password trong answer file và không dùng `SkipMachineOOBE`/`BypassNRO`.
-- `CopyProfile`, association mặc định và Start layout không bảo đảm sao chép mọi cài đặt hay ứng dụng. Kiểm tra lại trên đúng bản Windows sẽ triển khai.
-- Ứng dụng đã cài nằm trong WIM; `unattend.xml` không sao chép ứng dụng.
-- Lệnh tải `irm ... | iex` thực thi ngay nội dung URL với quyền của PowerShell hiện tại. Nên ưu tiên tải bản gắn tag, đọc mã, rồi mới chạy.
-
-Xem [`docs/BUILD_GUIDE_VI.md`](docs/BUILD_GUIDE_VI.md) và [`docs/PUBLISH_AND_RUN_VI.md`](docs/PUBLISH_AND_RUN_VI.md) để biết đầy đủ các bước.
+- Lệnh `irm ... | iex` thực thi mã tải từ URL với quyền của phiên PowerShell hiện tại. Nên tải bản gắn tag, đọc mã, kiểm tra hash qua kênh tin cậy rồi mới chạy.
+- Nếu chọn tạo local account, `unattend.xml` chứa tên user và password được encode Base64 (`PlainText=false`); Base64 không phải mã hóa bảo mật. Không commit hoặc chia sẻ answer file tạo ra.
+- `CopyProfile`, Start layout và app associations không sao chép mọi cài đặt hay ứng dụng. Kiểm tra lại trên đúng bản Windows cần triển khai.
+- Chuẩn WinPE thường không có PowerShell mặc định. Nếu không có PowerShell, capture thủ công bằng DISM từ Command Prompt; xem hướng dẫn để biết mẫu lệnh.
