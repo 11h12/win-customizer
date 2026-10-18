@@ -119,10 +119,10 @@ Sau khi Sysprep đã tắt máy, boot USB WinPE. Chạy toolkit bằng PowerShel
 - ổ lưu WIM, bắt buộc khác ổ source;
 - đường dẫn file `.wim` hoặc `.esd` đầu ra. Nếu chọn `.esd`, toolkit capture WIM trung gian rồi dùng `DISM /Export-Image /Compress:recovery` để chuyển đổi.
 
-Toolkit chạy `DISM /Capture-Image` với `/Compress:max /CheckIntegrity /Verify`, sau đó chạy `/Get-WimInfo` để kiểm tra index. Nếu chọn ESD, image được nén lại bằng `/Compress:recovery`. Nếu WinPE không có PowerShell, dùng lệnh DISM thủ công:
+Toolkit chạy `DISM /Capture-Image` với `/Compress:fast /CheckIntegrity /Verify` để capture nhanh, sau đó chạy `/Get-WimInfo` để kiểm tra index. Nếu chọn ESD, image được nén lại bằng `/Compress:recovery`. Nếu WinPE không có PowerShell, dùng lệnh DISM thủ công:
 
 ```text
-dism /Capture-Image /ImageFile:D:\install.wim /CaptureDir:W:\ /Name:"Windows_Custom" /Description:"Custom Windows image" /Compress:max /CheckIntegrity /Verify
+dism /Capture-Image /ImageFile:D:\install.wim /CaptureDir:W:\ /Name:"Windows_Custom" /Description:"Custom Windows image" /Compress:fast /CheckIntegrity /Verify
 dism /Get-WimInfo /WimFile:D:\install.wim
 ```
 

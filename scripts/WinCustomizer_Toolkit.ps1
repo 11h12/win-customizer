@@ -500,7 +500,7 @@ function Invoke-Step5_CaptureWim {
     $convertToEsd = [System.IO.Path]::GetExtension($imagePath) -ieq '.esd'
     if ($convertToEsd) { $captureWim = "$imagePath.capture.wim" }
     Invoke-ToolkitTask $taskNumber 'DISM Capture-Image' {
-        $dismCode = Invoke-DismWithProgress -Activity 'DISM Capture-Image' -Arguments @('/Capture-Image', "/ImageFile:$captureWim", "/CaptureDir:$sourceRoot", '/Name:Windows_Custom', '/Description:Custom Windows image', '/Compress:max', '/CheckIntegrity', '/Verify')
+        $dismCode = Invoke-DismWithProgress -Activity 'DISM Capture-Image' -Arguments @('/Capture-Image', "/ImageFile:$captureWim", "/CaptureDir:$sourceRoot", '/Name:Windows_Custom', '/Description:Custom Windows image', '/Compress:fast', '/CheckIntegrity', '/Verify')
         if ($dismCode -ne 0 -or -not (Test-Path -LiteralPath $captureWim -PathType Leaf)) { throw "DISM capture that bai (ma loi $dismCode)." }
     } | Out-Null
 
