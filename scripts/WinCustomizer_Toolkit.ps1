@@ -403,17 +403,13 @@ function Test-UnattendForSysprep {
     $copy = $doc.SelectNodes('/u:unattend/u:settings[@pass="specialize"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:CopyProfile', $ns)
     if ($copy.Count -gt 1 -or ($copy.Count -eq 1 -and $copy[0].InnerText -ine 'true')) { throw 'CopyProfile neu co phai co dung mot gia tri true.' }
     $account = $doc.SelectSingleNode('/u:unattend/u:settings[@pass="oobeSystem"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:UserAccounts/u:LocalAccounts/u:LocalAccount', $ns)
-    $accountName = $null
-    if ($null -ne $account) {
-        $accountName = $account.SelectSingleNode('./u:Name', $ns)
-        if ($null -eq $accountName -or [string]::IsNullOrWhiteSpace($accountName.InnerText)) { throw 'LocalAccount khong co ten hop le.' }
-        $password = $account.SelectSingleNode('./u:Password/u:Value', $ns)
-        if ($null -eq $password -or [string]::IsNullOrWhiteSpace($password.InnerText)) { throw 'LocalAccount khong co password.' }
-        try { [void][Convert]::FromBase64String($password.InnerText) } catch { throw 'Password trong answer file khong phai Base64 Unicode hop le.' }
-    }
+    $accountName = $account.SelectSingleNode('./u:Name', $ns)
+    if ($null -eq $account -or $null -eq $accountName -or [string]::IsNullOrWhiteSpace($accountName.InnerText)) { throw 'Khong co LocalAccount hop le trong oobeSystem.' }
+    $password = $account.SelectSingleNode('./u:Password/u:Value', $ns)
+    if ($null -eq $password -or [string]::IsNullOrWhiteSpace($password.InnerText)) { throw 'LocalAccount khong co password.' }
+    try { [void][Convert]::FromBase64String($password.InnerText) } catch { throw 'Password trong answer file khong phai Base64 Unicode hop le.' }
     if ($doc.SelectNodes('//*[local-name()="SkipMachineOOBE" or local-name()="SkipUserOOBE"]').Count -gt 0) { throw 'Khong cho phep SkipMachineOOBE/SkipUserOOBE.' }
     if ($doc.OuterXml -match '(?i)BypassNRO|AutoLogon') { throw 'Khong cho phep BypassNRO hoac AutoLogon trong answer file nay.' }
-    if ($null -eq $accountName) { return '[Khong tao account; OOBE se hoi account]' }
     return $accountName.InnerText
 }
 
