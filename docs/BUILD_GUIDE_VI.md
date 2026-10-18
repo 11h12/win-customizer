@@ -10,6 +10,10 @@
 4. Dùng built-in Administrator để cấu hình profile nếu dự định bật `CopyProfile`. Không tạo tài khoản tạm và không đăng nhập bằng domain account.
 5. Nếu image chỉ dành cho cùng một model/phần cứng, có thể giữ driver bằng `PersistAllDeviceInstalls`. Khi script hỏi ở bước tạo answer file, chọn `Yes` chỉ trong trường hợp đó; nếu triển khai cho nhiều model hoặc chưa chắc, chọn `No`. Thiết lập này không thay thế quy trình quản lý driver.
 
+**Không tạo user tạm trong giai đoạn này.** User tạm tạo thêm profile và có thể làm `CopyProfile` lấy nhầm profile hoặc khiến Sysprep không validate được image. Built-in `Administrator` trong Audit Mode là tài khoản dùng để cài đặt và tùy chỉnh image.
+
+Nếu Windows Update yêu cầu restart trước khi hoàn tất tùy chỉnh, khi máy quay lại màn hình OOBE hãy nhấn lại `Ctrl` + `Shift` + `F3` để vào Audit Mode. Không tạo user cuối cùng trước khi capture.
+
 ## 2. Dọn dẹp và xuất cấu hình
 
 Mở Windows PowerShell bằng quyền Administrator, vào thư mục repository rồi chạy:
@@ -73,9 +77,9 @@ Mặc định script không bật AutoLogon. AutoLogon nhiều lần hoặc tài
 
 Các mục OOBE được cấu hình riêng thay vì dùng `SkipMachineOOBE`, mục Microsoft khuyến nghị không dùng để tự động hóa OOBE. Script không đặt `BypassNRO`: đây không phải cấu hình triển khai ổn định. Các trang không được cấu hình vẫn có thể xuất hiện; kiểm tra answer file bằng Windows SIM đúng catalog/bản Windows trước khi dùng.
 
-## 4. Chạy Sysprep và capture WIM
+## 4. Chạy Sysprep
 
-1. Hoàn tất tùy biến và cập nhật. Trước Sysprep, ngắt mạng theo quy trình vận hành của bạn để tránh thay đổi ngoài dự kiến trong giai đoạn chốt image.
+1. Hoàn tất tùy biến và cập nhật. Chạy mục `1` để cleanup, mục `2` để tạo `unattend.xml`, rồi ngắt mạng theo quy trình vận hành của bạn trước khi chốt image.
 2. Chọn mục `3`, xác nhận bằng cách gõ `SYSPREP`. Máy sẽ chạy:
 
    ```text
@@ -107,7 +111,7 @@ Các mục OOBE được cấu hình riêng thay vì dùng `SkipMachineOOBE`, m�
    dism /Get-WimInfo /WimFile:D:\install.wim
    ```
 
-## 4. Capture WIM bằng toolkit trong WinPE
+## 5. Capture WIM bằng toolkit trong WinPE
 
 Sau khi Sysprep đã tắt máy, boot USB WinPE. Chạy toolkit bằng PowerShell nếu WinPE của bạn có PowerShell, chọn mục `4`. Toolkit sẽ liệt kê volume, yêu cầu chọn:
 
@@ -122,7 +126,7 @@ dism /Capture-Image /ImageFile:D:\install.wim /CaptureDir:W:\ /Name:"Windows_Cus
 dism /Get-WimInfo /WimFile:D:\install.wim
 ```
 
-## 5. Thay WIM và đóng gói ISO
+## 6. Thay WIM và đóng gói ISO
 
 1. Khởi động lại vào Windows đã cài AnyBurn. Không boot lại máy tham chiếu đã Sysprep để sử dụng tiếp làm máy thường.
 2. Chạy toolkit, chọn mục `5`, nhập ISO gốc, WIM vừa capture và đường dẫn ISO đầu ra. Script chỉ hỗ trợ ISO có `sources\install.wim` hoặc `sources\install.esd`; ISO dùng bộ `install*.swm` chia phần cần quy trình riêng.

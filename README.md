@@ -2,6 +2,8 @@
 
 Toolkit PowerShell hỗ trợ chuẩn bị máy Windows tham chiếu, tạo answer file cho Sysprep, capture WIM và đóng gói lại ISO.
 
+Quy trình chuẩn là: vào Audit Mode bằng `Ctrl+Shift+F3`, dùng built-in Administrator để cài driver/app/update và tùy chỉnh, không tạo user tạm; sau đó cleanup, tạo `unattend.xml`, chạy Sysprep, boot WinPE để capture WIM và cuối cùng đóng gói ISO.
+
 ## Thành phần
 
 - [`scripts/WinCustomizer_Toolkit.ps1`](scripts/WinCustomizer_Toolkit.ps1): menu tương tác gồm dọn dẹp/xuất cấu hình, tạo `unattend.xml`, chạy Sysprep và đóng gói ISO bằng AnyBurn CLI.
