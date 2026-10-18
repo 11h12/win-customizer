@@ -284,11 +284,9 @@ function Invoke-Step2_GenerateUnattendXml {
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
     $backupPath = Read-Host 'Thu muc backup tuy chon (Enter de bo qua)'
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
-        $backupPath = $backupPath.Trim()
-        if ($backupPath -match '^[A-Za-z]:\\?$') {
-            $backupPath = $backupPath.Substring(0, 2) + '\'
-        } else {
-            $backupPath = [System.IO.Path]::GetFullPath($backupPath)
+        $backupPath = $backupPath.Trim().Trim('"')
+        if ($backupPath -notmatch '^[A-Za-z]:\\') {
+            $backupPath = Join-Path -Path (Get-Location).Path -ChildPath $backupPath
         }
     }
     $copyProfileXml = ''
@@ -375,7 +373,11 @@ $localAccountXml
     $passwordEncoded = $null; $unattendXml = $null
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
         try {
-            if (-not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+            $isDriveRoot = $backupPath -match '^[A-Za-z]:\\?$'
+            if ($isDriveRoot -and -not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+                throw "Khong tim thay o luu backup: $backupPath"
+            }
+            if (-not $isDriveRoot -and -not (Test-Path -LiteralPath $backupPath -PathType Container)) {
                 New-Item -ItemType Directory -LiteralPath $backupPath -Force -ErrorAction Stop | Out-Null
             }
             $backupFile = ($backupPath.TrimEnd('\') + '\unattend.xml')
