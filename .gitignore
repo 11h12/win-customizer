@@ -1,0 +1,28 @@
+# Windows image outputs (keep large/private build artifacts out of Git)
+*.iso
+*.wim
+*.esd
+*.swm
+*.vhd
+*.vhdx
+*.vmdk
+
+# Generated answer files may contain local account information
+unattend.xml
+Autounattend.xml
+**/unattend.xml
+**/Autounattend.xml
+
+# Build output and logs
+/output/
+/build/
+*.log
+*.etl
+*.tmp
+
+# Windows/editor metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
