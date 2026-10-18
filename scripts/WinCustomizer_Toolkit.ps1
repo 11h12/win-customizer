@@ -374,10 +374,17 @@ $localAccountXml
     })){ $passwordEncoded = $null; return }
     $passwordEncoded = $null; $unattendXml = $null
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
-        New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
-        $backupFile = Join-Path -Path $backupPath -ChildPath 'unattend.xml'
-        Copy-Item -LiteralPath $targetPath -Destination $backupFile -Force -ErrorAction Stop
-        Write-Host "Da backup answer file: $backupFile" -ForegroundColor Yellow
+        try {
+            if (-not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+                New-Item -ItemType Directory -LiteralPath $backupPath -Force -ErrorAction Stop | Out-Null
+            }
+            $backupFile = ($backupPath.TrimEnd('\') + '\unattend.xml')
+            Copy-Item -LiteralPath $targetPath -Destination $backupFile -Force -ErrorAction Stop
+            Write-Host "Da backup answer file: $backupFile" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Warning "Khong backup duoc answer file vao '$backupPath': $($_.Exception.Message)"
+        }
     }
     Write-Host "Da tao answer file: $targetPath" -ForegroundColor Green
     Write-Host 'Windows SIM voi catalog dung version van la buoc xac minh bat buoc truoc Sysprep.' -ForegroundColor Yellow
