@@ -159,6 +159,26 @@ function Invoke-Step1_CleanAndExport {
             Write-Host "[$taskNumber] [SKIPPED] Xuat Start layout - khong co Export-StartLayout" -ForegroundColor DarkYellow
             $script:ToolkitTaskResults += [pscustomobject]@{ Number = $taskNumber; Name = 'Xuat Start layout'; Status = 'SKIPPED'; Duration = '00:00:00'; Error = 'Cmdlet khong co tren ban Windows nay' }
         }
+
+        if (Read-YesNo 'Copy tat ca shortcut .lnk tren Desktop vao Start Menu cho moi user?') {
+            $taskNumber++
+            Invoke-ToolkitTask $taskNumber 'Copy shortcut vao Start Menu dung chung' {
+                $desktopPath = [Environment]::GetFolderPath('Desktop')
+                $sharedStartMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
+                $shortcuts = @(Get-ChildItem -LiteralPath $desktopPath -Filter '*.lnk' -File -ErrorAction Stop)
+                if ($shortcuts.Count -eq 0) { throw "Khong tim thay shortcut .lnk tren $desktopPath" }
+                New-Item -ItemType Directory -Path $sharedStartMenu -Force -ErrorAction Stop | Out-Null
+                foreach ($shortcut in $shortcuts) {
+                    $destination = Join-Path $sharedStartMenu $shortcut.Name
+                    if (Test-Path -LiteralPath $destination) {
+                        Write-Warning "Da ton tai, bo qua: $destination"
+                    } else {
+                        Copy-Item -LiteralPath $shortcut.FullName -Destination $destination -Force -ErrorAction Stop
+                        Write-Host "      $($shortcut.Name) -> $sharedStartMenu" -ForegroundColor DarkGray
+                    }
+                }
+            } | Out-Null
+        }
     }
     finally {
         $taskNumber++
