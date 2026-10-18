@@ -270,17 +270,10 @@ function Read-LocalAdminPassword {
 function Invoke-Step2_GenerateUnattendXml {
     Clear-Host
     Write-Host '=== BUOC 2: TAO UNATTEND.XML ===' -ForegroundColor Cyan
-    Write-Warning 'Answer file chua thong tin tai khoan. Base64 khong phai ma hoa; khong commit hoac chia se file.'
+    Write-Host 'Account se duoc tao thu cong trong OOBE; answer file khong luu username/password.' -ForegroundColor DarkGray
 
     $script:ToolkitTaskResults = @()
     $copyProfile = Read-YesNo 'Dua giao dien/profile hien tai lam profile mac dinh (CopyProfile)?'
-    $createLocalAccount = Read-YesNo 'Tao local admin moi trong OOBE? Neu No, OOBE se hoi nguoi dung tao tai khoan'
-    $adminUser = $null
-    $passwordEncoded = $null
-    if ($createLocalAccount) {
-        $adminUser = Read-LocalAdminName
-        $passwordEncoded = Read-LocalAdminPassword
-    }
     $preserveDrivers = Read-YesNo 'Image chi dung cho cung model/cau hinh phan cung? Neu khong chac, chon No'
     $backupPath = Read-Host 'Thu muc backup tuy chon (Enter de bo qua)'
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
@@ -300,7 +293,7 @@ function Invoke-Step2_GenerateUnattendXml {
   </settings>
 '@
     }
-    $hideLocalAccountScreen = if ($createLocalAccount) { 'true' } else { 'false' }
+    $hideLocalAccountScreen = 'false'
     $driverSettings = ''
     if ($preserveDrivers) {
         $driverSettings = @'
@@ -310,25 +303,6 @@ function Invoke-Step2_GenerateUnattendXml {
     </component>
   </settings>
 '@
-    }
-    $escapedAdminUser = if ($createLocalAccount) { [System.Security.SecurityElement]::Escape($adminUser) } else { '' }
-    $localAccountXml = ''
-    if ($createLocalAccount) {
-        $localAccountXml = @"
-      <UserAccounts>
-        <LocalAccounts>
-          <LocalAccount wcm:action="add">
-            <Name>$escapedAdminUser</Name>
-            <DisplayName>$escapedAdminUser</DisplayName>
-            <Group>Administrators</Group>
-            <Password>
-              <Value>$passwordEncoded</Value>
-              <PlainText>false</PlainText>
-            </Password>
-          </LocalAccount>
-        </LocalAccounts>
-      </UserAccounts>
-"@
     }
     $targetPath = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
 
@@ -346,7 +320,6 @@ $driverSettings
 $copyProfileXml
   <settings pass="oobeSystem">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-$localAccountXml
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideLocalAccountScreen>$hideLocalAccountScreen</HideLocalAccountScreen>
@@ -364,13 +337,13 @@ $localAccountXml
         if ($xmlDocument.DocumentElement.LocalName -ne 'unattend') { throw 'Root XML khong phai unattend.' }
         $copy = $xmlDocument.SelectNodes("//*[local-name()='CopyProfile']")
         if ($copy.Count -gt 1 -or ($copy.Count -eq 1 -and $copy[0].InnerText -ine 'true')) { throw 'CopyProfile neu co phai co mot gia tri true.' }
-    })){ $passwordEncoded = $null; return }
+    })){ return }
     $taskNumber++; if (-not (Invoke-ToolkitTask $taskNumber 'Ghi answer file va gioi han quyen doc' {
         [System.IO.File]::WriteAllText($targetPath, $unattendXml, [System.Text.UTF8Encoding]::new($false))
         & "$env:WINDIR\System32\icacls.exe" $targetPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'icacls khong gioi han duoc quyen doc answer file.' }
-    })){ $passwordEncoded = $null; return }
-    $passwordEncoded = $null; $unattendXml = $null
+    })){ return }
+    $unattendXml = $null
     if (-not [string]::IsNullOrWhiteSpace($backupPath)) {
         try {
             $isDriveRoot = $backupPath -match '^[A-Za-z]:\\?$'
@@ -402,15 +375,9 @@ function Test-UnattendForSysprep {
     $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
     $copy = $doc.SelectNodes('/u:unattend/u:settings[@pass="specialize"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:CopyProfile', $ns)
     if ($copy.Count -gt 1 -or ($copy.Count -eq 1 -and $copy[0].InnerText -ine 'true')) { throw 'CopyProfile neu co phai co dung mot gia tri true.' }
-    $account = $doc.SelectSingleNode('/u:unattend/u:settings[@pass="oobeSystem"]/u:component[@name="Microsoft-Windows-Shell-Setup"]/u:UserAccounts/u:LocalAccounts/u:LocalAccount', $ns)
-    $accountName = $account.SelectSingleNode('./u:Name', $ns)
-    if ($null -eq $account -or $null -eq $accountName -or [string]::IsNullOrWhiteSpace($accountName.InnerText)) { throw 'Khong co LocalAccount hop le trong oobeSystem.' }
-    $password = $account.SelectSingleNode('./u:Password/u:Value', $ns)
-    if ($null -eq $password -or [string]::IsNullOrWhiteSpace($password.InnerText)) { throw 'LocalAccount khong co password.' }
-    try { [void][Convert]::FromBase64String($password.InnerText) } catch { throw 'Password trong answer file khong phai Base64 Unicode hop le.' }
     if ($doc.SelectNodes('//*[local-name()="SkipMachineOOBE" or local-name()="SkipUserOOBE"]').Count -gt 0) { throw 'Khong cho phep SkipMachineOOBE/SkipUserOOBE.' }
     if ($doc.OuterXml -match '(?i)BypassNRO|AutoLogon') { throw 'Khong cho phep BypassNRO hoac AutoLogon trong answer file nay.' }
-    return $accountName.InnerText
+    return '[OOBE se tao account thu cong]'
 }
 
 function Invoke-Step3_RunSysprep {

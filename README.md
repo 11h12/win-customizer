@@ -27,7 +27,7 @@ Script không tự chạy các bước phá hủy: dọn Component Store, Syspre
 
 - Script cần quyền Administrator. Hãy xem mã nguồn trước khi chạy, nhất là khi tải trực tiếp từ Internet.
 - Mật khẩu local admin được hỏi lúc tạo answer file. Giá trị trong XML được mã hóa Base64 theo định dạng Windows SIM, **không phải mã hóa bảo mật**. File answer có thông tin nhạy cảm; không commit hoặc phát hành file đó.
-- Mặc định không bật AutoLogon, không tạo mật khẩu trống và không dùng `SkipMachineOOBE`/`BypassNRO`.
+- Mặc định không bật AutoLogon, không lưu username/password trong answer file và không dùng `SkipMachineOOBE`/`BypassNRO`.
 - `CopyProfile`, association mặc định và Start layout không bảo đảm sao chép mọi cài đặt hay ứng dụng. Kiểm tra lại trên đúng bản Windows sẽ triển khai.
 - Ứng dụng đã cài nằm trong WIM; `unattend.xml` không sao chép ứng dụng.
 - Lệnh tải `irm ... | iex` thực thi ngay nội dung URL với quyền của PowerShell hiện tại. Nên ưu tiên tải bản gắn tag, đọc mã, rồi mới chạy.

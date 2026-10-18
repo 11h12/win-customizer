@@ -63,7 +63,7 @@ Vì vậy, ở giai đoạn hiện tại bạn chỉ cần cài app/driver và t
 
 ## 3. Tạo answer file
 
-Chọn mục `2`. Nhập tên và mật khẩu mới cho tài khoản local Administrators được tạo ở OOBE. Không dùng mật khẩu trống hoặc mật khẩu dùng chung giữa các máy.
+Chọn mục `2`. Answer file chỉ cấu hình CopyProfile, OOBE và tùy chọn driver. Tài khoản và mật khẩu được tạo thủ công trong OOBE sau khi triển khai.
 
 Script tạo:
 
@@ -71,7 +71,7 @@ Script tạo:
 C:\Windows\System32\Sysprep\unattend.xml
 ```
 
-Answer file bật `CopyProfile` ở pass `specialize`, có thể giữ driver theo lựa chọn phần cứng và khai báo local admin ở pass `oobeSystem`. Mật khẩu trong XML được biểu diễn dưới dạng Base64 để Windows Setup nhận `PlainText=false`; Base64 có thể giải mã ngược và không bảo vệ mật khẩu. Giữ ACL của file hạn chế, không đưa file vào GitHub. Windows Setup có thể cache answer file trong Panther; xóa các answer file còn chứa thông tin nhạy cảm trước khi bàn giao image, sau khi những pass cần thiết đã chạy.
+Answer file bật `CopyProfile` ở pass `specialize` và có thể giữ driver theo lựa chọn phần cứng. File không lưu username/password; tài khoản được tạo ở OOBE. Windows Setup có thể cache answer file trong Panther; giữ file ngoài GitHub.
 
 Mặc định script không bật AutoLogon. AutoLogon nhiều lần hoặc tài khoản admin không mật khẩu làm lộ quyền truy cập khi image bị phát tán. Nếu lab cô lập thực sự cần AutoLogon, hãy thêm có chủ đích bằng Windows System Image Manager (Windows SIM), giới hạn số lần đăng nhập và kiểm tra việc xóa thông tin sau triển khai.
 
