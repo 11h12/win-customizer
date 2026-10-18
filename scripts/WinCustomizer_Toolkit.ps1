@@ -572,8 +572,8 @@ while ($continueMenu) {
     Write-Host ' 1. Don dep va xuat app associations/Start layout'
     Write-Host ' 2. Tao Sysprep unattend.xml'
     Write-Host ' 3. Chay Sysprep /generalize /oobe /shutdown'
-    Write-Host ' 4. Thay install.wim trong ISO bang AnyBurn CLI'
-    Write-Host ' 5. Capture WIM trong WinPE'
+    Write-Host ' 4. Capture WIM trong WinPE'
+    Write-Host ' 5. Thay install.wim trong ISO bang AnyBurn CLI'
     Write-Host ' Q. Thoat toolkit'
     Write-Host '=================================================' -ForegroundColor Cyan
 
@@ -581,8 +581,8 @@ while ($continueMenu) {
         '1' { Invoke-Step1_CleanAndExport; Pause-Toolkit }
         '2' { Invoke-Step2_GenerateUnattendXml; Pause-Toolkit }
         '3' { Invoke-Step3_RunSysprep; Pause-Toolkit }
-        '4' { Invoke-Step4_BuildISO; Pause-Toolkit }
-        '5' { Invoke-Step5_CaptureWim; Pause-Toolkit }
+        '4' { Invoke-Step5_CaptureWim; Pause-Toolkit }
+        '5' { Invoke-Step4_BuildISO; Pause-Toolkit }
         'Q' { $continueMenu = $false }
         default { Write-Host 'Lua chon khong hop le.' -ForegroundColor Red; Start-Sleep -Seconds 2 }
     }
